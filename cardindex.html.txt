@@ -1,0 +1,356 @@
+card/index.html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Ian Waite — Founder & Managing Principal at PIMEC Innovative Engineering LLC.">
+  <meta name="theme-color" content="#081c2d">
+  <title>Ian Waite | PIMEC Digital Business Card</title>
+  <style>
+    :root{
+      --navy:#081c2d;
+      --steel:#2c6d8d;
+      --copper:#dc7b35;
+      --copper2:#b95b21;
+      --paper:#f3f6f7;
+      --white:#fff;
+      --ink:#142330;
+      --muted:#637582;
+      --line:#d6e0e5;
+      --radius:22px;
+    }
+    *{box-sizing:border-box}
+    html{min-height:100%;background:var(--navy)}
+    body{
+      min-height:100vh;
+      margin:0;
+      background:
+        radial-gradient(circle at 18% 2%,#225b79 0,transparent 28rem),
+        linear-gradient(145deg,#071725,#0b2b43 56%,#112f44);
+      color:var(--ink);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+    button,a{font:inherit}
+    a{text-decoration:none;color:inherit}
+    .page{width:min(100% - 28px,470px);margin:0 auto;padding:26px 0 38px}
+    .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;color:#dae7ed}
+    .logo{letter-spacing:.14em;font-size:.83rem;font-weight:900}
+    .logo small{display:block;margin-top:3px;color:#9ec2d3;font-size:.52rem;letter-spacing:.1em}
+    .top a{font-size:.82rem;color:#dce7ec}
+    .card{
+      overflow:hidden;
+      background:var(--paper);
+      border:1px solid rgba(255,255,255,.28);
+      border-radius:var(--radius);
+      box-shadow:0 26px 60px rgba(0,0,0,.35);
+    }
+    .hero{
+      position:relative;
+      min-height:248px;
+      padding:26px;
+      background:linear-gradient(145deg,rgba(44,109,141,.97),rgba(8,28,45,.98) 68%);
+      color:#fff;
+    }
+    .hero:before{
+      content:"";
+      position:absolute;
+      inset:0;
+      opacity:.21;
+      background-image:
+        linear-gradient(90deg,#fff 1px,transparent 1px),
+        linear-gradient(#fff 1px,transparent 1px);
+      background-size:46px 46px;
+      mask-image:linear-gradient(to bottom,#000,transparent 95%);
+    }
+    .hero>*{position:relative}
+    .status{
+      display:inline-flex;
+      align-items:center;
+      gap:7px;
+      padding:6px 9px;
+      background:rgba(255,255,255,.11);
+      border:1px solid rgba(255,255,255,.21);
+      border-radius:99px;
+      font-size:.68rem;
+      font-weight:800;
+      letter-spacing:.04em;
+      text-transform:uppercase;
+    }
+    .dot{
+      width:7px;
+      height:7px;
+      background:#78d497;
+      border-radius:50%;
+      box-shadow:0 0 0 3px rgba(120,212,151,.17);
+    }
+    .monogram{
+      position:absolute;
+      right:25px;
+      bottom:24px;
+      width:82px;
+      height:82px;
+      display:grid;
+      place-items:center;
+      border:1px solid rgba(255,255,255,.42);
+      border-radius:50%;
+      background:rgba(255,255,255,.1);
+      font-size:1.55rem;
+      font-weight:900;
+      letter-spacing:.05em;
+    }
+    .hero h1{
+      margin:66px 0 5px;
+      max-width:270px;
+      font-size:2.15rem;
+      line-height:1.02;
+      letter-spacing:-.055em;
+    }
+    .title{margin:0;color:#d1e0e7;font-size:.94rem}
+    .company{
+      margin-top:18px;
+      color:#f4f8f9;
+      font-size:.78rem;
+      font-weight:900;
+      letter-spacing:.105em;
+      text-transform:uppercase;
+    }
+    .content{padding:24px}
+    .headline{margin:0 0 21px;color:#364955;font-size:1.03rem;line-height:1.5}
+    .primary{
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      gap:9px;
+      width:100%;
+      min-height:54px;
+      padding:12px;
+      background:var(--copper);
+      border:0;
+      border-radius:10px;
+      color:#fff;
+      font-weight:900;
+      cursor:pointer;
+    }
+    .primary:hover{background:var(--copper2)}
+    .actions{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:12px}
+    .action{
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      min-height:82px;
+      padding:13px 14px;
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:11px;
+      color:#223744;
+      cursor:pointer;
+      text-align:left;
+    }
+    .icon{color:var(--steel);font-size:1.18rem;line-height:1}
+    .label{margin-top:8px;font-size:.77rem;font-weight:800}
+    .detail{margin-top:4px;color:var(--muted);font-size:.7rem;overflow-wrap:anywhere}
+    .divider{height:1px;margin:23px 0;background:var(--line)}
+    .section-label{
+      margin:0 0 11px;
+      color:var(--muted);
+      font-size:.68rem;
+      font-weight:900;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+    }
+    .about{margin:0;color:#3f535f;font-size:.88rem;line-height:1.6}
+    .tags{display:flex;flex-wrap:wrap;gap:7px;margin-top:17px}
+    .tag{padding:6px 8px;background:#e4edf1;border-radius:4px;color:#345365;font-size:.68rem;font-weight:800}
+    .share{display:flex;gap:10px;margin-top:22px}
+    .secondary{
+      flex:1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:7px;
+      min-height:44px;
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:8px;
+      color:#345365;
+      font-size:.78rem;
+      font-weight:800;
+      cursor:pointer;
+    }
+    .qr-area{
+      display:none;
+      place-items:center;
+      margin-top:18px;
+      padding:18px;
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:12px;
+      text-align:center;
+    }
+    .qr-area.active{display:grid}
+    .qr-area img{width:185px;height:185px;image-rendering:pixelated}
+    .qr-area p{margin:11px 0 0;color:var(--muted);font-size:.74rem}
+    .footer{margin-top:19px;color:#abc0ca;font-size:.69rem;text-align:center}
+    .toast{
+      position:fixed;
+      left:50%;
+      bottom:24px;
+      z-index:20;
+      padding:10px 15px;
+      transform:translate(-50%,15px);
+      opacity:0;
+      pointer-events:none;
+      background:#fff;
+      color:#193140;
+      border-radius:8px;
+      box-shadow:0 10px 30px rgba(0,0,0,.25);
+      font-size:.8rem;
+      font-weight:800;
+      transition:.2s;
+    }
+    .toast.show{opacity:1;transform:translate(-50%,0)}
+    @media(max-width:375px){
+      .actions{grid-template-columns:1fr}
+      .hero h1{margin-top:52px}
+      .monogram{width:68px;height:68px;font-size:1.25rem}
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="top">
+      <a class="logo" href="https://www.pimecineng.com/" aria-label="PIMEC home">
+        PIMEC
+        <small>Innovative Engineering LLC</small>
+      </a>
+      <a href="https://www.pimecineng.com/">Visit website ↗</a>
+    </div>
+
+    <main class="card">
+      <section class="hero">
+        <div class="status"><span class="dot"></span> Available for discussions</div>
+        <div class="monogram" aria-label="Ian Waite initials">IW</div>
+        <h1>Ian Waite</h1>
+        <p class="title">Founder &amp; Managing Principal</p>
+        <div class="company">PIMEC Innovative Engineering LLC</div>
+      </section>
+
+      <section class="content">
+        <p class="headline">Industrial Value Creation &amp; Operations Transformation</p>
+
+        <a class="primary" href="ian-waite-pimec.vcf" download="Ian-Waite-PIMEC.vcf">
+          ↓ Save Contact
+        </a>
+
+        <div class="actions">
+          <a class="action" href="mailto:info@pimecineng.com?subject=PIMEC%20Inquiry">
+            <span class="icon">✉</span>
+            <span class="label">Email</span>
+            <span class="detail">info@pimecineng.com</span>
+          </a>
+
+          <a class="action" href="https://www.pimecineng.com/">
+            <span class="icon">↗</span>
+            <span class="label">Website</span>
+            <span class="detail">pimecineng.com</span>
+          </a>
+
+          <a class="action" href="https://www.pimecineng.com/#services">
+            <span class="icon">◈</span>
+            <span class="label">Services</span>
+            <span class="detail">Explore PIMEC advisory</span>
+          </a>
+
+          <button class="action" id="qrButton" type="button">
+            <span class="icon">▦</span>
+            <span class="label">QR Code</span>
+            <span class="detail">Share this card in person</span>
+          </button>
+        </div>
+
+        <div class="qr-area" id="qrArea">
+          <img id="qrImage" alt="QR code for the PIMEC digital business card">
+          <p>Scan to open this digital business card.</p>
+        </div>
+
+        <div class="divider"></div>
+
+        <p class="section-label">About PIMEC</p>
+
+        <p class="about">
+          PIMEC helps industrial leaders turn operational complexity into measurable EBITDA improvement, cash release, stronger delivery performance, and sustainable growth.
+        </p>
+
+        <div class="tags">
+          <span class="tag">Value Creation</span>
+          <span class="tag">Operations Recovery</span>
+          <span class="tag">Manufacturing</span>
+          <span class="tag">Transformation</span>
+        </div>
+
+        <div class="share">
+          <button class="secondary" id="shareButton" type="button">↗ Share Card</button>
+          <button class="secondary" id="copyButton" type="button">⧉ Copy Link</button>
+        </div>
+      </section>
+    </main>
+
+    <div class="footer">© 2026 PIMEC Innovative Engineering LLC · Oklahoma City, Oklahoma</div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const cardUrl = "https://www.pimecineng.com/card/";
+    const toast = document.getElementById("toast");
+
+    function notice(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+
+    document.getElementById("copyButton").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(cardUrl);
+        notice("Card link copied");
+      } catch {
+        notice(cardUrl);
+      }
+    });
+
+    document.getElementById("shareButton").addEventListener("click", async () => {
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: "Ian Waite | PIMEC",
+            text: "Industrial Value Creation & Operations Transformation",
+            url: cardUrl
+          });
+        } catch {}
+      } else {
+        try {
+          await navigator.clipboard.writeText(cardUrl);
+          notice("Card link copied");
+        } catch {
+          notice(cardUrl);
+        }
+      }
+    });
+
+    document.getElementById("qrButton").addEventListener("click", () => {
+      const area = document.getElementById("qrArea");
+      const image = document.getElementById("qrImage");
+
+      if (!image.src) {
+        image.src =
+          "https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=12&data=" +
+          encodeURIComponent(cardUrl);
+      }
+
+      area.classList.toggle("active");
+    });
+  </script>
+</body>
+</html>
