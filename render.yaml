@@ -13,7 +13,7 @@ services:
       - key: PORTAL_HTTPS_ONLY
         value: "1"
       - key: CONSULTANT_EMAIL
-        sync: false
+        value: info@pimecineng.com
       - key: CONSULTANT_PASSWORD_HASH
         sync: false
       - key: PORTAL_SESSION_SECRET
