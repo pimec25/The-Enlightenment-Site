@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: pimec-consultant-portal
+    runtime: python
+    rootDir: consultant-portal
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: PORTAL_HTTPS_ONLY
+        value: "1"
+      - key: CONSULTANT_EMAIL
+        sync: false
+      - key: CONSULTANT_PASSWORD_HASH
+        sync: false
+      - key: PORTAL_SESSION_SECRET
+        generateValue: true
+
+
