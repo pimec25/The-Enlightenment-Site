@@ -11,12 +11,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from analyze_sales_periods import analyze
+from method_analysis import analyze_case
+from method_schema import SCHEMA
 import sso
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -103,6 +105,48 @@ async def home(request: Request):
 @app.get("/consultant/login", response_class=HTMLResponse)
 def login_page(request: Request):
     return templates.TemplateResponse(request, "login.html", {"error": None, "csrf": csrf(request)})
+
+
+@app.get("/consultant/method", response_class=HTMLResponse)
+async def method_workspace(request: Request):
+    await require_consultant(request)
+    return templates.TemplateResponse(request, "method.html", {"csrf": csrf(request)})
+
+
+@app.get("/consultant/method/schema")
+async def method_schema(request: Request):
+    await require_consultant(request)
+    return SCHEMA
+
+
+@app.get("/consultant/method.js")
+async def method_script(request: Request):
+    await require_consultant(request)
+    return FileResponse(BASE_DIR / "static" / "method.js", media_type="application/javascript")
+
+
+@app.get("/consultant/method.css")
+async def method_style(request: Request):
+    await require_consultant(request)
+    return FileResponse(BASE_DIR / "static" / "method.css", media_type="text/css")
+
+
+@app.post("/consultant/method/review")
+async def method_review(request: Request):
+    await require_consultant(request)
+    token = request.headers.get("x-csrf-token", "")
+    if not token or not request.session.get("csrf"):
+        raise HTTPException(403, "Invalid form token")
+    verify_csrf(request, token)
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 2 * 1024 * 1024:
+            raise HTTPException(413, "Case exceeds the 2 MB limit")
+    try:
+        return analyze_case(json.loads(body))
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @app.post("/consultant/sso")
@@ -200,4 +244,3 @@ if __name__ == "__main__":
     if args.hash_password:
         import getpass
         print(hash_password(getpass.getpass("Consultant password: ")))
-
