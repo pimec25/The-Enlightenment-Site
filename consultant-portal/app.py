@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from analyze_sales_periods import analyze
+import sso
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env.local")
@@ -41,7 +42,10 @@ def verify_password(password: str, encoded: str) -> bool:
         return False
 
 
-def require_consultant(request: Request) -> None:
+async def require_consultant(request: Request) -> None:
+    if request.session.get("sso_id"):
+        await sso.validate_session(request.session["sso_id"])
+        return
     if not request.session.get("consultant"):
         raise HTTPException(status_code=401, detail="Consultant sign-in required")
 
@@ -88,9 +92,10 @@ def root():
 
 
 @app.get("/consultant", response_class=HTMLResponse)
-def home(request: Request):
+async def home(request: Request):
     if not request.session.get("consultant"):
         return RedirectResponse("/consultant/login", status_code=303)
+    await require_consultant(request)
     from datetime import date
     return templates.TemplateResponse(request, "upload.html", {"csrf": csrf(request), "today": date.today().isoformat()})
 
@@ -98,6 +103,29 @@ def home(request: Request):
 @app.get("/consultant/login", response_class=HTMLResponse)
 def login_page(request: Request):
     return templates.TemplateResponse(request, "login.html", {"error": None, "csrf": csrf(request)})
+
+
+@app.post("/consultant/sso")
+async def dashboard_sign_in(request: Request):
+    sso.check_origin(request)
+    authorization = request.headers.get("authorization", "")
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Dashboard sign-in required.")
+    token = authorization[7:]
+    subject = await sso.verify_consultant(token)
+    sso.SESSIONS.pop(request.session.get("sso_id", ""), None)
+    request.session.clear()
+    request.session.update({"consultant": True, "sso_id": sso.create_session(token, subject),
+                            "csrf": secrets.token_urlsafe(32)})
+    return {"authenticated": True}
+
+
+@app.post("/consultant/sso/logout")
+async def dashboard_sign_out(request: Request):
+    sso.check_origin(request)
+    sso.SESSIONS.pop(request.session.get("sso_id", ""), None)
+    request.session.clear()
+    return {"authenticated": False}
 
 
 @app.post("/consultant/login", response_class=HTMLResponse)
@@ -115,16 +143,16 @@ def login(request: Request, email: str = Form(...), password: str = Form(...), c
 
 
 @app.post("/consultant/logout")
-def logout(request: Request, csrf_token: str = Form(...)):
-    require_consultant(request)
+async def logout(request: Request, csrf_token: str = Form(...)):
     verify_csrf(request, csrf_token)
+    sso.SESSIONS.pop(request.session.get("sso_id", ""), None)
     request.session.clear()
     return RedirectResponse("/consultant/login", status_code=303)
 
 
 @app.post("/consultant/analyze", response_class=HTMLResponse)
 async def analyze_upload(request: Request, workbook: UploadFile = File(...), csrf_token: str = Form(...), as_of: str = Form(...)):
-    require_consultant(request)
+    await require_consultant(request)
     verify_csrf(request, csrf_token)
     if not workbook.filename or Path(workbook.filename).suffix.lower() != ".xlsx":
         raise HTTPException(status_code=400, detail="Upload an .xlsx workbook")
@@ -156,8 +184,8 @@ async def analyze_upload(request: Request, workbook: UploadFile = File(...), csr
 
 
 @app.get("/consultant/report.json")
-def download_report(request: Request):
-    require_consultant(request)
+async def download_report(request: Request):
+    await require_consultant(request)
     report = RESULTS.get(request.session.get("report_id", ""))
     if not report:
         raise HTTPException(status_code=404, detail="No active report")
