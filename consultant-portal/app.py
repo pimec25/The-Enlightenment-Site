@@ -7,18 +7,22 @@ import os
 import secrets
 import tempfile
 import uuid
+import base64
+from urllib.parse import quote
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from analyze_sales_periods import analyze
-from method_analysis import analyze_case
+from method_analysis import analyze_case, validate_case
 from method_schema import SCHEMA
+from office_documents import extract_office, checked_zip
+import saved_records
 import sso
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -61,7 +65,7 @@ def csrf(request: Request) -> str:
 
 
 def verify_csrf(request: Request, token: str) -> None:
-    if not hmac.compare_digest(request.session.get("csrf", ""), token or ""):
+    if not token or not request.session.get("csrf") or not hmac.compare_digest(request.session.get("csrf", ""), token):
         raise HTTPException(status_code=403, detail="Invalid form token")
 
 
@@ -149,6 +153,119 @@ async def method_review(request: Request):
         raise HTTPException(422, str(exc)) from exc
 
 
+@app.post("/consultant/documents", response_class=HTMLResponse)
+async def document_upload(request: Request, document: UploadFile = File(...), csrf_token: str = Form(...), as_of: str = Form(...)):
+    await require_consultant(request)
+    verify_csrf(request, csrf_token)
+    filename = (document.filename or "upload").replace("\\", "/").split("/")[-1][:160]
+    content = await document.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File exceeds the 30 MB upload limit")
+    try:
+        from datetime import date
+        cutoff = date.fromisoformat(as_of)
+        extracted = extract_office(content, filename)
+    except (ValueError, TypeError) as exc:
+        return templates.TemplateResponse(request, "document.html", {"error": str(exc), "csrf": csrf(request), "document": None}, status_code=422)
+    report = None
+    if filename.lower().endswith(".xlsx"):
+        # Generic Excel files are accepted as documents; compatible sales files also receive the existing analysis.
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as handle:
+                handle.write(content)
+                temp_path = Path(handle.name)
+            report = analyze(temp_path, cutoff)
+            report.update({"source": "Uploaded workbook", "uploaded_filename": filename})
+            report_id = uuid.uuid4().hex
+            RESULTS[report_id] = report
+            request.session["report_id"] = report_id
+        except (ValueError, TypeError, ZeroDivisionError):
+            extracted["analysis_note"] = "Workbook accepted for review and saving. Automatic sales analysis requires the sales-detail columns and comparable periods. Review the extracted sheet values below."
+        finally:
+            if temp_path:
+                temp_path.unlink(missing_ok=True)
+    saved_records.stage(request, {"kind": "upload", "filename": filename, "original": base64.b64encode(content).decode(), "document": extracted, "report": report})
+    if report:
+        return templates.TemplateResponse(request, "results.html", {"report": report, "csrf": csrf(request)})
+    return templates.TemplateResponse(request, "document.html", {"document": extracted, "error": None, "csrf": csrf(request)})
+
+
+@app.post("/consultant/records/save")
+async def save_uploaded_record(request: Request, csrf_token: str = Form(...), draft_id: str = Form(...)):
+    await require_consultant(request)
+    verify_csrf(request, csrf_token)
+    key = await saved_records.save_draft(request, draft_id)
+    return RedirectResponse("/consultant/records/" + key + "?saved=1", status_code=303)
+
+
+@app.get("/consultant/records", response_class=HTMLResponse)
+async def records_library(request: Request, offset: int = 0):
+    await require_consultant(request)
+    offset = max(0, min(offset, 100000))
+    records = await saved_records.listing(request, offset)
+    return templates.TemplateResponse(request, "records.html", {"records": records, "offset": offset})
+
+
+@app.get("/consultant/records/{key}", response_class=HTMLResponse)
+async def open_record(request: Request, key: str, saved: bool = False):
+    await require_consultant(request)
+    record = await saved_records.read(request, key)
+    return templates.TemplateResponse(request, "record.html", {"record": record, "key": key, "saved": saved})
+
+
+@app.get("/consultant/records/{key}/original")
+async def original_record(request: Request, key: str):
+    await require_consultant(request)
+    record = await saved_records.read(request, key)
+    if record["kind"] != "upload":
+        return JSONResponse(record["case"], headers={"Content-Disposition": "attachment; filename=pimec-method-case.json"})
+    try:
+        content = base64.b64decode(record["original"], validate=True)
+    except (ValueError, KeyError):
+        raise HTTPException(422, "Saved original is invalid") from None
+    return Response(content, media_type="application/octet-stream", headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(record["filename"], safe="")})
+
+
+@app.get("/consultant/records/{key}/review")
+async def saved_review(request: Request, key: str):
+    await require_consultant(request)
+    record = await saved_records.read(request, key)
+    return JSONResponse(record.get("report") or record.get("document") or analyze_case(record["case"]), headers={"Content-Disposition": "attachment; filename=saved-review.json"})
+
+
+@app.get("/consultant/records/{key}/case")
+async def saved_case(request: Request, key: str):
+    await require_consultant(request)
+    record = await saved_records.read(request, key)
+    if record["kind"] != "case":
+        raise HTTPException(422, "This record is a document, not a PIMEC case.")
+    return validate_case(record["case"])
+
+
+@app.post("/consultant/method/save")
+async def save_method_case(request: Request):
+    await require_consultant(request)
+    saved_records.identity(request)
+    token = request.headers.get("x-csrf-token", "")
+    if not token or not request.session.get("csrf"):
+        raise HTTPException(403, "Invalid form token")
+    verify_csrf(request, token)
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 2 * 1024 * 1024:
+            raise HTTPException(413, "Case exceeds the 2 MB limit")
+    try:
+        case = validate_case(json.loads(body))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    name = next((r["client"] for r in case["records"]["charter"] if r["client"]), "PIMEC-case")
+    draft = saved_records.stage(request, {"kind": "case", "filename": name[:100], "case": case})
+    key = await saved_records.save_draft(request, draft)
+    return {"saved": True, "key": key}
+
+
 @app.post("/consultant/sso")
 async def dashboard_sign_in(request: Request):
     sso.check_origin(request)
@@ -204,6 +321,11 @@ async def analyze_upload(request: Request, workbook: UploadFile = File(...), csr
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Workbook exceeds the 30 MB upload limit")
     try:
+        with checked_zip(content):
+            pass
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    try:
         from datetime import date
         cutoff = date.fromisoformat(as_of)
     except ValueError as exc:
@@ -224,6 +346,8 @@ async def analyze_upload(request: Request, workbook: UploadFile = File(...), csr
     finally:
         if temp_path:
             temp_path.unlink(missing_ok=True)
+    saved_records.stage(request, {"kind": "upload", "filename": Path(workbook.filename).name,
+        "original": base64.b64encode(content).decode(), "document": None, "report": report})
     return templates.TemplateResponse(request, "results.html", {"report": report, "csrf": csrf(request)})
 
 

@@ -5,7 +5,7 @@
   const csrf = document.querySelector('meta[name="csrf-token"]').content;
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; };
   const message = (text) => { $("message").textContent = text; };
-  const changed = () => { state.dirty = true; state.report = null; $("report").hidden = true; message("Unsaved changes — download your case before leaving."); };
+  const changed = () => { state.dirty = true; state.report = null; $("report").hidden = true; message("Unsaved changes — select Save records or download your case before leaving."); };
   function input(field, record) {
     const label = el("label", field.label, "field");
     let node;
@@ -109,6 +109,22 @@
     $("report").hidden = false; $("report").scrollIntoView({behavior: "smooth"});
   }
   $("save").addEventListener("click", () => { download(state.data, "pimec-method-case.json"); state.dirty = false; message("Case download started. Keep the file in your approved client storage."); });
+  $("cloud-save").addEventListener("click", async () => {
+    $("cloud-save").disabled = true;
+    const snapshot = JSON.stringify(state.data);
+    message("Saving to your private Consultant records…");
+    try {
+      const response = await fetch("/consultant/method/save", {method: "POST", credentials: "same-origin", cache: "no-store", headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf}, body: snapshot});
+      if (!response.headers.get("content-type")?.includes("application/json")) throw new Error("Save could not be confirmed. Keep this page open and retry.");
+      const result = await response.json();
+      if (!response.ok || !result.saved) throw new Error(result.detail || "Save failed. Keep your case open and retry.");
+      if (snapshot === JSON.stringify(state.data)) {
+        state.dirty = false;
+        message("Record saved successfully. Reopen it from Saved records.");
+      } else message("The earlier version was saved. You have newer unsaved changes; select Save records again.");
+    } catch (error) { message(error.message); }
+    finally { $("cloud-save").disabled = false; }
+  });
   $("review").addEventListener("click", async () => {
     $("review").disabled = true; message("Reviewing evidence, readiness and calculations…");
     try { state.report = await review(state.data); showReport(state.report); message("Review ready. Download your case to preserve your entries."); }
@@ -121,7 +137,7 @@
       if (file.size > 2 * 1024 * 1024) throw new Error("Case exceeds the 2 MB limit.");
       if (state.dirty && !confirm("Replace unsaved entries with this case?")) return;
       const report = await review(JSON.parse(await file.text()));
-      state.data = report.case; state.report = null; state.dirty = false; state.active = 0; $("report").hidden = true; render(); message("Case opened. Changes must be downloaded to save them.");
+      state.data = report.case; state.report = null; state.dirty = false; state.active = 0; $("report").hidden = true; render(); message("Case opened. Select Save records to keep a private cloud copy.");
     } catch (error) { message("Could not open case: " + error.message); }
     finally { event.target.value = ""; }
   });
@@ -131,6 +147,13 @@
   window.addEventListener("beforeunload", event => { if (state.dirty) { event.preventDefault(); event.returnValue = ""; } });
   fetch("/consultant/method/schema", {credentials: "same-origin", cache: "no-store"}).then(async response => {
     if (!response.ok) throw new Error("Sign in again through the Consultant dashboard to open the workspace.");
-    state.schema = await response.json(); render(); message("Start with the charter, or open a saved case.");
+    state.schema = await response.json();
+    const key = new URLSearchParams(window.location.search).get("record");
+    if (key) {
+      const response = await fetch("/consultant/records/" + encodeURIComponent(key) + "/case", {credentials: "same-origin", cache: "no-store"});
+      if (!response.ok) throw new Error("The saved case could not be opened. Return to Saved records or sign in through the dashboard again.");
+      state.data = await response.json();
+    }
+    render(); message(key ? "Saved case opened. Select Save records after making changes." : "Start with the charter, or open a saved case.");
   }).catch(error => { message(error.message); $("review").disabled = true; });
 })();

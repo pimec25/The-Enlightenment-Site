@@ -19,7 +19,13 @@ Review is deterministic. It does not call an LLM or independently perform site o
 
 ## Data and persistence
 
-Entries live only in page memory. No localStorage, server database, cookies, or permanent server file stores case content. Download a version 1 JSON case to retain work; import validates it on the authenticated server. The review request is processed transiently, protected by the existing session and CSRF token. Maximum case size is 2 MB, 200 records per register, 8,000 characters per field. Store downloaded cases and source evidence in approved client storage.
+Unsaved case entries live in page memory. Save records writes a new immutable private bundle to Supabase Storage under the verified Consultant account. Download case remains available as a local backup. Saved records can reopen a case for continued editing. Maximum case size is 2 MB, 200 records per register, 8,000 characters per field.
+
+Office uploads accept .docx, .xlsx and .pptx up to 30 MB. Word paragraphs/tables, PowerPoint slide text and Excel cached sheet values are extracted as data, never instructions. No OCR, macros or external content are executed. Excel previews show up to 200 rows and 30 columns per sheet, on up to 20 sheets; all extracted previews have text/block limits. A saved upload retains the complete original file and extraction/report. Compatible sales workbooks still use the established sales analyzer. Legacy Office formats require conversion.
+
+Save requires dashboard SSO, uses the caller's access token and does not use a service-role key. The private consultant-analysis-records bucket enforces consultant role plus owner-folder access through RLS. No update/delete grants are added; saves create versions. Temporary uploads are limited to 100 MB of aggregate in-process staged data, expire after 30 minutes, and are lost on restart. Distinct draft IDs prevent a save in one browser tab from saving another tab's upload. Cloud-saved records survive app restarts. Storage policies are recorded in storage-records.sql and were applied through Supabase migration private_consultant_analysis_records.
+
+Verification: 29 relevant tests passed, including extraction, session/CSRF enforcement, ownership, save/reload, cloud errors and financial calculations. The Supabase advisor returned existing unrelated warnings about public SECURITY DEFINER functions and leaked-password protection; this release does not modify those functions or auth settings. Storage follows https://supabase.com/docs/guides/storage/security/access-control and https://supabase.com/docs/guides/storage/buckets/fundamentals.
 
 The management review includes a printable evidence pack and JSON download. Every edit hides the previous review to avoid exporting stale calculations. Navigation warns about unsaved edits. No data is sent to third-party model providers by this feature.
 

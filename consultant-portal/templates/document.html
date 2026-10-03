@@ -1,0 +1,8 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Document review</title><link rel="stylesheet" href="/static/portal.css"></head><body><header><strong>Consultant document review</strong><a href="/consultant">Upload another file</a></header><main>
+{% if error %}<section class="card"><h1>File could not be opened</h1><p class="alert">{{ error }}</p><a href="/consultant">Return to upload</a></section>{% else %}
+<p class="eyebrow">{{ document.format }} DOCUMENT</p><h1>{{ document.filename }}</h1><p>{{ document.note }}</p>
+{% if document.analysis_note %}<p class="notice">{{ document.analysis_note }}</p>{% endif %}
+{% if document.truncated %}<p class="alert">The preview is shortened. Saving retains the complete original file.</p>{% endif %}
+<section class="card"><h2>Save this upload</h2><p>Save the original document and this review to your private Consultant records. Unsaved uploads expire after 30 minutes or a service restart.</p><form method="post" action="/consultant/records/save"><input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="draft_id" value="{{ request.session.draft_id }}"><button type="submit">Save records</button></form><p><a href="/consultant/records">Open saved records</a></p></section>
+{% for block in document.blocks %}<section class="card document-block"><h2>{{ block.label }}</h2><pre class="document-text">{{ block.text }}</pre></section>{% else %}<p>No readable text was found. Scanned images require manual review; the original file can still be saved.</p>{% endfor %}
+{% endif %}</main></body></html>
