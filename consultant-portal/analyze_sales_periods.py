@@ -7,6 +7,7 @@ from datetime import datetime, date as date_type
 from pathlib import Path
 
 from openpyxl import load_workbook
+from pareto_analysis import detailed_analysis
 
 
 def pct(n, d):
@@ -52,6 +53,8 @@ def analyze(path, as_of=None):
     if missing:
         raise ValueError(f"Missing columns: {missing}")
     ix = {name: headers.index(name) for name in needed}
+    names = {field: headers.index(column) for field, column in
+             (("customer_name", "Customer Name"), ("item_name", "Product Name")) if column in headers}
     rows = []
     for excel_row, values in enumerate(iterator, 2):
         date = values[ix["Request Date"]]
@@ -64,7 +67,8 @@ def analyze(path, as_of=None):
                      "item": str(values[ix["2nd Item Number"]]).strip(),
                      "value_stream": str(values[ix["Value Stream Product Family"]]).strip(),
                      "order": str(values[ix["Order Number"]]).strip(),
-                     "line": str(values[ix["Line Number"]]).strip()})
+                     "line": str(values[ix["Line Number"]]).strip(),
+                     **{field: str(values[index] or "").strip() for field, index in names.items()}})
     if not rows:
         raise ValueError("No rows with valid Request Date")
     as_of = as_of or date_type.today()
@@ -109,7 +113,9 @@ def analyze(path, as_of=None):
                        "sales_pct": 100 * pct(cur["sales"]-prv["sales"], prv["sales"]) if prv["sales"] else None,
                        "gross_profit": cur["gross_profit"] - prv["gross_profit"],
                        "gross_profit_pct": 100 * pct(cur["gross_profit"]-prv["gross_profit"], prv["gross_profit"]) if prv["gross_profit"] else None,
-                       "gross_margin_points": cur["gross_margin_pct"] - prv["gross_margin_pct"]},
+                       "gross_margin_points": (cur["gross_margin_pct"] - prv["gross_margin_pct"]
+                                               if cur["gross_margin_pct"] is not None and prv["gross_margin_pct"] is not None else None)},
+            "detailed_80_20": detailed_analysis(current, prior),
             "pareto": {field: {metric: pareto(current, field, metric) for metric in ["sales", "gross_profit"]}
                        for field in ["customer", "item"]},
             "current_value_streams": {key: metrics(values) for key, values in stream.items()},
@@ -139,4 +145,3 @@ if __name__ == "__main__":
         args.output.write_text(text + "\n", encoding="utf-8")
     else:
         print(text)
-

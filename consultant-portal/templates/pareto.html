@@ -1,0 +1,44 @@
+{% macro number(value, suffix='') %}{{ ('{:,.2f}'.format(value) ~ suffix) if value is not none else 'N/A' }}{% endmacro %}
+{% if report.detailed_80_20 %}
+{% set analysis = report.detailed_80_20 %}
+<section class="card document-block" id="detailed-80-20">
+  <p class="eyebrow">Decision support · {{ report.as_of }}</p>
+  <h2>Detailed 80/20 analysis &amp; QUADs</h2>
+  <p>Period: {{ report.current_period.label }}. All amounts are in the source workbook currency.</p>
+  <p><strong>High-margin threshold: {{ number(analysis.margin_threshold_pct, '%') }}</strong> — the weighted gross margin of the current business.</p>
+  <details><summary>Calculation definitions and limitations</summary><ul>{% for definition in analysis.definitions %}<li>{{ definition }}</li>{% endfor %}</ul></details>
+</section>
+{% for field, title in [('customer', 'Customer'), ('item', 'Product')] %}
+{% set dimension = analysis.dimensions[field] %}
+<section class="card document-block">
+  <h2>{{ title }} profitability QUADs</h2>
+  <p>High sales means membership of the revenue 80 group. High margin means gross margin at or above the business threshold.</p>
+  <div class="grid">{% for quad in dimension.quads if quad.code != 'Review' %}
+    <article class="quad"><h3>{{ quad.code }} · {{ quad.label }}</h3>
+      <p><strong>{{ quad.group_count }} {{ title|lower }} groups</strong> · {{ quad.row_count }} transactions</p>
+      <dl><dt>Sales</dt><dd>{{ number(quad.sales) }}</dd><dt>Gross profit</dt><dd>{{ number(quad.gross_profit) }}</dd><dt>Gross margin</dt><dd>{{ number(quad.gross_margin_pct, '%') }}</dd><dt>Transaction gross loss</dt><dd>{{ number(quad.gross_loss) }}</dd></dl>
+      <p>{{ quad.action }}</p><details><summary>Members</summary><p>{{ quad.members|join(', ') or 'None' }}</p></details>
+    </article>{% endfor %}</div>
+  {% set review = dimension.quads[-1] %}{% if review.group_count %}<p class="notice"><strong>Review: {{ review.group_count }} unclassified groups.</strong> {{ review.action }} Members: {{ review.members|join(', ') }}. Net sales {{ number(review.sales) }}; gross profit {{ number(review.gross_profit) }}.</p>{% endif %}
+  {% for metric, label in [('sales', 'Revenue'), ('gross_profit', 'Gross profit'), ('gross_loss', 'Gross loss')] %}
+  {% set ranking = dimension[metric] %}
+  <details class="ranking" {% if metric == 'sales' %}open{% endif %}>
+    <summary>{{ title }} {{ label|lower }} ranking — {{ ranking.groups_to_80 }} of {{ ranking.total_groups }} groups reach 80%</summary>
+    <p>{{ number(ranking.pct_groups_to_80, '%') }} of groups contribute {{ number(ranking.coverage_pct, '%') }} of the positive {{ label|lower }} base.
+      Top 20% of groups ({{ ranking.top_20_count }}) contribute {{ number(ranking.top_20_share_pct, '%') }}.</p>
+    <p>Positive base: {{ number(ranking.positive_base) }} · Negative contribution: {{ number(ranking.negative_total) }} · Net total: {{ number(ranking.net_total) }}.</p>
+    {% if not ranking.positive_base %}<p class="notice">No positive {{ label|lower }} base in this period. Concentration percentages are unavailable.</p>{% endif %}
+    <div class="table-scroll" tabindex="0" role="region" aria-label="{{ title }} {{ label }} rankings"><table>
+      <caption>Complete {{ title|lower }} {{ label|lower }} ranking. 80 membership applies to this metric; QUAD always uses revenue and margin.</caption>
+      <thead><tr><th>Rank</th><th>{{ title }}</th><th>{{ label }}</th><th>Share</th><th>Cumulative</th><th>80 group</th><th>QUAD</th><th>Sales</th><th>Gross profit</th><th>GM</th><th>Loss / rows</th><th>Prior sales</th><th>Sales change</th><th>GP change</th></tr></thead>
+      <tbody>{% for row in ranking.rows %}<tr><td>{{ row.rank }}</td><th scope="row">{{ row.id }}{% if row.name %}<br>{{ row.name }}{% endif %}</th><td>{{ number(row[metric]) }}</td><td>{{ number(row.share_pct, '%') }}</td><td>{{ number(row.cumulative_pct, '%') }}</td><td>{{ 'Yes' if row.in_80_group else 'No' }}</td><td>{{ row.quad }}</td><td>{{ number(row.sales) }}</td><td>{{ number(row.gross_profit) }}</td><td>{{ number(row.gross_margin_pct, '%') }}</td><td>{{ number(row.gross_loss) }} / {{ row.loss_rows }}</td><td>{{ number(row.prior_sales) }}</td><td>{{ number(row.sales_change) }}</td><td>{{ number(row.gross_profit_change) }}{% if not row.has_prior_activity %}<br>No prior activity{% endif %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </details>{% endfor %}
+  {% if dimension.prior_only %}<details class="ranking"><summary>{{ dimension.prior_only|length }} {{ title|lower }} groups with prior activity and no current activity</summary><table><tr><th>Identifier</th><th>Prior sales</th><th>Prior gross profit</th></tr>{% for row in dimension.prior_only %}<tr><td>{{ row.id }}</td><td>{{ number(row.sales) }}</td><td>{{ number(row.gross_profit) }}</td></tr>{% endfor %}</table></details>{% endif %}
+</section>{% endfor %}
+<section class="card document-block"><h2>Customer × product 80/20 QUAD matrix</h2>
+  <p>The first number represents the customer revenue group; the second represents the product revenue group. “20” means the remaining tail. This matrix uses revenue importance on both axes.</p>
+  <div class="grid">{% for cell in analysis.customer_product_matrix %}<article class="quad"><h3>{{ cell.code }}</h3><p>{{ cell.customer_count }} customers · {{ cell.item_count }} products · {{ cell.row_count }} transactions</p><dl><dt>Sales</dt><dd>{{ number(cell.sales) }}</dd><dt>Gross profit</dt><dd>{{ number(cell.gross_profit) }}</dd><dt>Gross margin</dt><dd>{{ number(cell.gross_margin_pct, '%') }}</dd><dt>Transaction gross loss</dt><dd>{{ number(cell.gross_loss) }}</dd></dl><p>{{ cell.action }}</p>
+  <details><summary>Customer/product combinations</summary><div class="table-scroll" tabindex="0" role="region" aria-label="{{ cell.code }} combinations"><table><tr><th>Customer</th><th>Product</th><th>Sales</th><th>GP</th><th>GM</th><th>Gross loss</th></tr>{% for pair in cell.pairs %}<tr><td>{{ pair.customer }}</td><td>{{ pair.item }}</td><td>{{ number(pair.sales) }}</td><td>{{ number(pair.gross_profit) }}</td><td>{{ number(pair.gross_margin_pct, '%') }}</td><td>{{ number(pair.gross_loss) }}</td></tr>{% endfor %}</table></div></details></article>{% endfor %}</div>
+</section>
+{% endif %}
