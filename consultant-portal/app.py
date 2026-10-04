@@ -103,7 +103,19 @@ async def home(request: Request):
         return RedirectResponse("/consultant/login", status_code=303)
     await require_consultant(request)
     from datetime import date
-    return templates.TemplateResponse(request, "upload.html", {"csrf": csrf(request), "today": date.today().isoformat()})
+    return templates.TemplateResponse(request, "upload.html", {"csrf": csrf(request), "today": date.today().isoformat(), "max_upload_bytes": MAX_UPLOAD_BYTES})
+
+
+def upload_too_large(request: Request):
+    return templates.TemplateResponse(request, "upload_error.html", {
+        "limit_mb": MAX_UPLOAD_BYTES / (1024 * 1024)
+    }, status_code=413)
+
+
+@app.get("/consultant/upload.js")
+async def upload_script(request: Request):
+    await require_consultant(request)
+    return FileResponse(BASE_DIR / "static" / "upload.js", media_type="application/javascript")
 
 
 @app.get("/consultant/login", response_class=HTMLResponse)
@@ -160,7 +172,7 @@ async def document_upload(request: Request, document: UploadFile = File(...), cs
     filename = (document.filename or "upload").replace("\\", "/").split("/")[-1][:160]
     content = await document.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(413, "File exceeds the 30 MB upload limit")
+        return upload_too_large(request)
     try:
         from datetime import date
         cutoff = date.fromisoformat(as_of)
@@ -319,7 +331,7 @@ async def analyze_upload(request: Request, workbook: UploadFile = File(...), csr
         raise HTTPException(status_code=400, detail="Upload an .xlsx workbook")
     content = await workbook.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="Workbook exceeds the 30 MB upload limit")
+        return upload_too_large(request)
     try:
         with checked_zip(content):
             pass

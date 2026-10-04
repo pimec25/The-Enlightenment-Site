@@ -54,6 +54,36 @@ def test_office_extract_and_validation():
         extract_office(entity16, 'bad.docx')
 
 
+@pytest.mark.parametrize('route,field', [('/consultant/documents', 'document'), ('/consultant/analyze', 'workbook')])
+def test_oversized_file_has_recovery_page(monkeypatch, route, field):
+    c, token = client(monkeypatch)
+    monkeypatch.setattr(app, 'MAX_UPLOAD_BYTES', 128)
+    def unexpected(*args, **kwargs):
+        raise AssertionError('Oversized files must not be parsed or saved')
+    monkeypatch.setattr(app, 'extract_office', unexpected)
+    monkeypatch.setattr(app, 'analyze', unexpected)
+    monkeypatch.setattr(store, 'stage', unexpected)
+    response = c.post(route, data={'csrf_token':token, 'as_of':'2026-09-30'}, files={field:('large.xlsx', b'x' * 129)})
+    assert response.status_code == 413
+    assert response.headers['content-type'].startswith('text/html')
+    assert 'File is too large' in response.text
+    assert 'Choose another file' in response.text
+    assert 'Separate uploads are not combined automatically' in response.text
+    assert 'has not been analyzed or saved' in response.text
+    assert response.headers['cache-control'] == 'no-store'
+
+
+def test_exact_upload_limit_allowed_and_preflight_present(monkeypatch):
+    c, token = client(monkeypatch)
+    monkeypatch.setattr(app, 'MAX_UPLOAD_BYTES', len(WORD))
+    response = c.post('/consultant/documents', data={'csrf_token':token,'as_of':'2026-09-30'}, files={'document':('sample.docx', WORD)})
+    assert response.status_code == 200
+    page = c.get('/consultant')
+    assert f'data-max-upload-bytes="{len(WORD)}"' in page.text
+    assert 'upload-size-notice' in page.text
+    assert 'upload.js' in page.text
+
+
 def test_upload_save_reload_original_and_csrf(monkeypatch):
     c, token = client(monkeypatch)
     uploads = {}
