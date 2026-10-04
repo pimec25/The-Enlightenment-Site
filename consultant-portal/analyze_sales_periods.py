@@ -42,8 +42,15 @@ def pareto(rows, field, metric):
             "amount_covered": cumulative, "top_10": selected[:10]}
 
 
-def analyze(path, as_of=None):
-    book = load_workbook(path, read_only=True, data_only=True)
+def analyze(path, as_of=None, progress=None):
+    book = load_workbook(path, read_only=True, data_only=True, keep_links=False)
+    try:
+        return analyze_book(book, path, as_of, progress)
+    finally:
+        book.close()
+
+
+def analyze_book(book, path, as_of=None, progress=None):
     sheet = book.active
     iterator = sheet.iter_rows(values_only=True)
     headers = next(iterator)
@@ -57,6 +64,8 @@ def analyze(path, as_of=None):
              (("customer_name", "Customer Name"), ("item_name", "Product Name")) if column in headers}
     rows = []
     for excel_row, values in enumerate(iterator, 2):
+        if progress and excel_row % 1000 == 0:
+            progress(excel_row - 1, max(1, (sheet.max_row or 1) - 1))
         date = values[ix["Request Date"]]
         if not isinstance(date, datetime):
             continue

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -232,6 +232,11 @@ async def original_record(request: Request, key: str):
     record = await saved_records.read(request, key)
     if record["kind"] != "upload":
         return JSONResponse(record["case"], headers={"Content-Disposition": "attachment; filename=pimec-method-case.json"})
+    if record.get('original_parts'):
+        stream = await saved_records.original_parts(request, key, record)
+        return StreamingResponse(stream, media_type='application/octet-stream', headers={
+            'Content-Length': str(record['original_size']),
+            'Content-Disposition': "attachment; filename*=UTF-8''" + quote(record['filename'], safe='')})
     try:
         content = base64.b64decode(record["original"], validate=True)
     except (ValueError, KeyError):
@@ -380,3 +385,7 @@ if __name__ == "__main__":
     if args.hash_password:
         import getpass
         print(hash_password(getpass.getpass("Consultant password: ")))
+
+
+import large_workbooks
+large_workbooks.install(app, require_consultant, verify_csrf, csrf, templates)

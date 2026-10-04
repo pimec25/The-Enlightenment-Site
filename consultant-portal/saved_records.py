@@ -3,6 +3,9 @@ import json
 import re
 import time
 import uuid
+import base64
+import hashlib
+from pathlib import Path
 from datetime import datetime, timezone
 import httpx
 from fastapi import HTTPException
@@ -60,16 +63,65 @@ async def save_draft(request, draft_id=None):
         raise HTTPException(410, "The temporary upload expired. Upload the file again, then save it.")
     if entry["owner"] != subject:
         raise HTTPException(403, "This upload belongs to a different sign-in. Upload it again from your dashboard session.")
-    response = await call(token, "POST", "object/" + key_path(subject, entry["key"]), content=json.dumps(entry["record"]).encode())
+    record = dict(entry['record'])
+    original_path = record.pop('_original_path', None)
+    if original_path:
+        parts = []
+        size = 0
+        with Path(original_path).open('rb') as source:
+            while data := source.read(4 * 1024 * 1024):
+                digest = hashlib.sha256(data).hexdigest()
+                name = f"{entry['key']}.{len(parts):04d}.json"
+                path = f"{BUCKET}/{subject}/parts/{name}"
+                payload = {'data': base64.b64encode(data).decode(), 'sha256': digest}
+                response = await call(token, 'POST', 'object/' + path, content=json.dumps(payload).encode())
+                if response.status_code not in (200, 201):
+                    if response.status_code in (400, 409) and 'Duplicate' in response.text:
+                        existing = await call(token, 'GET', 'object/authenticated/' + path)
+                        if existing.status_code != 200 or existing.json() != payload:
+                            raise HTTPException(503, 'Saved file piece did not verify. Retry Save records.')
+                    else:
+                        raise HTTPException(503, 'File pieces were not fully saved. Retry Save records.')
+                parts.append({'name': name, 'sha256': digest, 'size': len(data)})
+                size += len(data)
+        record.update(original_parts=parts, original_size=size)
+    encoded = json.dumps(record).encode()
+    if len(encoded) > 45 * 1024 * 1024:
+        raise HTTPException(413, 'Calculated report is too large to save. The original workbook remains on your computer.')
+    response = await call(token, "POST", "object/" + key_path(subject, entry["key"]), content=encoded)
     if response.status_code not in (200, 201):
         # A completed upload may have lost its response; an identical immutable key is safe to retry.
         if response.status_code in (400, 409) and "Duplicate" in response.text:
             existing = await read(request, entry["key"])
-            if existing != entry["record"]:
+            if existing != record:
                 raise HTTPException(409, "A different saved record uses this ID. Upload again to create a new record.")
         else:
             raise HTTPException(503, "The record was not saved. Keep this page open and retry, or reopen the agent from the dashboard.")
     return entry["key"]
+
+
+async def original_parts(request, key, record):
+    token, subject = identity(request)
+    parts = record.get('original_parts')
+    if not isinstance(parts, list) or not 1 <= len(parts) <= 25:
+        raise HTTPException(422, 'Saved original manifest is invalid.')
+    total = 0
+    for index, part in enumerate(parts):
+        if part.get('name') != f'{key}.{index:04d}.json' or not 0 < part.get('size', 0) <= 4 * 1024 * 1024:
+            raise HTTPException(422, 'Saved original manifest is invalid.')
+        total += part['size']
+    if total != record.get('original_size'):
+        raise HTTPException(422, 'Saved original size is invalid.')
+    async def stream():
+        for part in parts:
+            response = await call(token, 'GET', f"object/authenticated/{BUCKET}/{subject}/parts/{part['name']}")
+            if response.status_code != 200:
+                raise RuntimeError('Saved file piece unavailable. Retry the download.')
+            data = base64.b64decode(response.json()['data'], validate=True)
+            if len(data) != part['size'] or hashlib.sha256(data).hexdigest() != part['sha256']:
+                raise RuntimeError('Saved file piece failed verification.')
+            yield data
+    return stream()
 
 
 async def listing(request, offset=0):
