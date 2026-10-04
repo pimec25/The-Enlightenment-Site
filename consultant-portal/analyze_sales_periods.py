@@ -42,9 +42,12 @@ def pareto(rows, field, metric):
             "amount_covered": cumulative, "top_10": selected[:10]}
 
 
-def analyze(path, as_of=None, progress=None):
+def analyze(path, as_of=None, progress=None, projected=False):
     book = load_workbook(path, read_only=True, data_only=True, keep_links=False)
     try:
+        if projected:
+            from projected_excel import ProjectedBook
+            return analyze_book(ProjectedBook(book), path, as_of, progress)
         return analyze_book(book, path, as_of, progress)
     finally:
         book.close()

@@ -122,7 +122,7 @@ def install(app, require_consultant, verify_csrf, csrf, templates):
         validate(job['path'])
         def progress(done, total):
             job['message'] = f'Analyzing row {done:,} of approximately {total:,}'
-        report = analyze(job['path'], job['cutoff'], progress)
+        report = analyze(job['path'], job['cutoff'], progress, projected=True)
         report.update(source='Uploaded workbook', uploaded_filename=job['filename'])
         return report
 

@@ -17,6 +17,8 @@ import app
 import large_workbooks as large
 import saved_records as store
 import sso
+from analyze_sales_periods import analyze
+from datetime import date
 
 
 def workbook():
@@ -34,6 +36,21 @@ def test_stream_validation(tmp_path):
         archive.writestr('xl/bad.xml',b' '*(1024*1024-4)+b'<!DOCTYPE test>')
     with pytest.raises(ValueError,match='declarations'):
         large.validate(path)
+
+
+@pytest.mark.parametrize('epoch1904', [False, True])
+def test_projected_reader_matches_standard_with_gaps_and_dates(tmp_path, epoch1904):
+    from openpyxl.utils.datetime import MAC_EPOCH
+    book=Workbook()
+    if epoch1904: book.epoch=MAC_EPOCH
+    sheet=book.active
+    sheet.append(['Request Date','Extended Price','Extended Cost','Parent Number','2nd Item Number','Value Stream Product Family','Order Number','Line Number','Customer Name','Product Name','Ignored'])
+    sheet.append([datetime(2026,1,1),150.5,120,123,'P1','V1',100,1,'Name & more','Item','Ignored content'])
+    sheet.append([None]*11)
+    sheet.append([datetime(2025,1,1),100,50,123,'P1','V1',101,1])
+    sheet.append([datetime(2026,2,1),0,50,124,'P2','V1',102,2])
+    path=tmp_path/'sparse.xlsx'; book.save(path)
+    assert analyze(path,date(2026,9,30),projected=True)==analyze(path,date(2026,9,30))
 
 
 def test_chunk_upload_analysis_save_download_retry_and_ownership(monkeypatch):
