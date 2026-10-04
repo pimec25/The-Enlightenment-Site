@@ -10,7 +10,7 @@ from pathlib import Path
 from zipfile import ZipFile, BadZipFile
 
 from fastapi import HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from analyze_sales_periods import analyze
 import saved_records
 
@@ -174,7 +174,7 @@ def install(app, require_consultant, verify_csrf, csrf, templates):
         job = await job_for(request, job_id)
         if 'report' not in job:
             raise HTTPException(409, 'Analysis is not ready.')
-        return job['report']
+        return JSONResponse(job['report'], headers={'Content-Disposition': 'attachment; filename=calculated-report.json'})
 
     async def save(job, request):
         try:
