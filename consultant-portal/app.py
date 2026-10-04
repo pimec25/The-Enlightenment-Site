@@ -76,6 +76,42 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
+@app.exception_handler(HTTPException)
+async def portal_error(request: Request, exc: HTTPException):
+    path = request.url.path
+    if exc.status_code == 401 and path.startswith('/consultant') and not path.startswith('/consultant/sso') and 'text/html' in request.headers.get('accept', ''):
+        retry_url = path if request.method == 'GET' else '/consultant/records'
+        if request.method == 'POST' and path.startswith('/consultant/large/') and path.endswith('/save'):
+            retry_url = path.removesuffix('/save')
+        elif request.method == 'POST' and path == '/consultant/records/save':
+            form = await request.form()
+            draft = str(form.get('draft_id', ''))
+            if len(draft) == 32 and all(c in '0123456789abcdef' for c in draft):
+                retry_url = '/consultant/drafts/' + draft
+        return templates.TemplateResponse(request, 'session_recovery.html', {'retry_url': retry_url}, status_code=401)
+    return JSONResponse({'detail': exc.detail}, status_code=exc.status_code, headers=exc.headers)
+
+
+@app.get('/consultant/drafts/{draft_id}', response_class=HTMLResponse)
+async def reopen_draft(request: Request, draft_id: str):
+    await require_consultant(request)
+    import time
+    _, subject = saved_records.identity(request)
+    entry = saved_records.DRAFTS.get(draft_id)
+    if not entry or entry['owner'] != subject:
+        raise HTTPException(404, 'Draft not found for this Consultant.')
+    if entry['expires'] <= time.time():
+        raise HTTPException(410, 'The unsaved analysis expired. Upload the file again. Previously saved records remain available.')
+    request.session['draft_id'] = draft_id
+    record = entry['record']
+    if record.get('report'):
+        report_id = uuid.uuid4().hex
+        RESULTS[report_id] = record['report']
+        request.session['report_id'] = report_id
+        return templates.TemplateResponse(request, 'results.html', {'report': record['report'], 'csrf': csrf(request)})
+    return templates.TemplateResponse(request, 'document.html', {'document': record.get('document'), 'error': None, 'csrf': csrf(request)})
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)

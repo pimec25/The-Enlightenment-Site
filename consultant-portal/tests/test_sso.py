@@ -83,3 +83,56 @@ def test_sso_network_failure_fails_closed(monkeypatch):
     monkeypatch.setattr(sso.httpx, "AsyncClient", lambda **kwargs: client(transport=httpx.MockTransport(fail), **kwargs))
     assert TestClient(app.app).post("/consultant/sso", headers=HEADERS).status_code == 503
 
+
+def test_outage_keeps_session_but_denies_request(monkeypatch):
+    key = sso.create_session('test-token', 'user-1')
+    async def unavailable(token):
+        raise HTTPException(503, 'Try again')
+    monkeypatch.setattr(sso, 'verify_consultant', unavailable)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(sso.validate_session(key))
+    assert error.value.status_code == 503
+    assert key in sso.SESSIONS
+    async def permitted(token): return 'user-1'
+    monkeypatch.setattr(sso, 'verify_consultant', permitted)
+    asyncio.run(sso.validate_session(key))
+
+
+def test_expired_browser_session_recovers_library_and_save(monkeypatch):
+    fake_supabase(monkeypatch)
+    client = TestClient(app.app)
+    client.post('/consultant/sso', headers=HEADERS)
+    session = json.loads(base64.b64decode(client.cookies['session'].split('.')[0]))
+    sso.SESSIONS.pop(session['sso_id'])
+    html = {'Accept': 'text/html'}
+    library = client.get('/consultant/records', headers=html)
+    assert library.status_code == 401
+    assert 'Reconnect to continue' in library.text
+    assert 'href="/consultant/records">Continue here' in library.text
+    assert 'target="_blank"' in library.text
+    # API clients must still receive JSON, never a login page masquerading as data.
+    assert client.get('/consultant/records').json()['detail'].startswith('Return to the dashboard')
+    draft = 'a' * 32
+    response = client.post('/consultant/records/save', headers=html,
+        data={'csrf_token': session['csrf'], 'draft_id': draft})
+    assert response.status_code == 401
+    assert f'href="/consultant/drafts/{draft}">Continue here' in response.text
+    response = client.post('/consultant/large/test-job/save', headers=html)
+    assert response.status_code == 401
+    assert 'href="/consultant/large/test-job">Continue here' in response.text
+
+
+def test_draft_reopens_after_reauthentication_only_for_owner(monkeypatch):
+    import saved_records
+    fake_supabase(monkeypatch)
+    client = TestClient(app.app)
+    client.post('/consultant/sso', headers=HEADERS)
+    draft = 'b' * 32
+    saved_records.DRAFTS[draft] = {'owner': 'user-1', 'expires': time.time()+60,
+        'record': {'kind': 'upload', 'document': None}}
+    client.post('/consultant/sso', headers=HEADERS)
+    response = client.get('/consultant/drafts/' + draft)
+    assert response.status_code == 200
+    saved_records.DRAFTS[draft]['owner'] = 'someone-else'
+    assert client.get('/consultant/drafts/' + draft).status_code == 404
+    saved_records.DRAFTS.pop(draft)

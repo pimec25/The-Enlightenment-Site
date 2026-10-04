@@ -61,7 +61,8 @@ async def validate_session(key):
         subject = await verify_consultant(stored[0])
         if subject != stored[1]:
             raise HTTPException(401, "Your dashboard session has changed.")
-    except HTTPException:
-        SESSIONS.pop(key, None)
+    except HTTPException as exc:
+        # Deny this request on outages, but allow a later verified retry.
+        if exc.status_code in (401, 403):
+            SESSIONS.pop(key, None)
         raise
-
